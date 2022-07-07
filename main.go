@@ -37,8 +37,19 @@ func NewProxy(targetHost string) (*httputil.ReverseProxy, error) {
 			req.Header.Set("User-Agent", "")
 		}
 	}
+
+	tr := &http.Transport{
+		ResponseHeaderTimeout: 0,
+		IdleConnTimeout:       15 * time.Second,
+		MaxIdleConnsPerHost:   10000,
+		Dial: (&net.Dialer{
+			Timeout:   3 * time.Second,
+			KeepAlive: 0,
+		}).Dial,
+	}
 	return &httputil.ReverseProxy{
 		Director:      director,
+		Transport:     tr,
 		FlushInterval: -1 * time.Nanosecond,
 		ErrorHandler:  httpProxyErrorHandler,
 	}, nil
@@ -61,39 +72,6 @@ func main() {
 	// handle all requests to your server using the proxy
 	http.HandleFunc("/", ProxyRequestHandler(proxy))
 	log.Fatal(http.ListenAndServe(":9090", nil))
-}
-
-func joinURLPath(a, b *url.URL) (path, rawpath string) {
-	if a.RawPath == "" && b.RawPath == "" {
-		return singleJoiningSlash(a.Path, b.Path), ""
-	}
-	// Same as singleJoiningSlash, but uses EscapedPath to determine
-	// whether a slash should be added
-	apath := a.EscapedPath()
-	bpath := b.EscapedPath()
-
-	aslash := strings.HasSuffix(apath, "/")
-	bslash := strings.HasPrefix(bpath, "/")
-
-	switch {
-	case aslash && bslash:
-		return a.Path + b.Path[1:], apath + bpath[1:]
-	case !aslash && !bslash:
-		return a.Path + "/" + b.Path, apath + "/" + bpath
-	}
-	return a.Path + b.Path, apath + bpath
-}
-
-func singleJoiningSlash(a, b string) string {
-	aslash := strings.HasSuffix(a, "/")
-	bslash := strings.HasPrefix(b, "/")
-	switch {
-	case aslash && bslash:
-		return a + b[1:]
-	case !aslash && !bslash:
-		return a + "/" + b
-	}
-	return a + b
 }
 
 func httpProxyErrorHandler(w http.ResponseWriter, r *http.Request, err error) {
@@ -123,4 +101,37 @@ func httpProxyErrorHandler(w http.ResponseWriter, r *http.Request, err error) {
 	}
 
 	return
+}
+
+func singleJoiningSlash(a, b string) string {
+	aslash := strings.HasSuffix(a, "/")
+	bslash := strings.HasPrefix(b, "/")
+	switch {
+	case aslash && bslash:
+		return a + b[1:]
+	case !aslash && !bslash:
+		return a + "/" + b
+	}
+	return a + b
+}
+
+func joinURLPath(a, b *url.URL) (path, rawpath string) {
+	if a.RawPath == "" && b.RawPath == "" {
+		return singleJoiningSlash(a.Path, b.Path), ""
+	}
+	// Same as singleJoiningSlash, but uses EscapedPath to determine
+	// whether a slash should be added
+	apath := a.EscapedPath()
+	bpath := b.EscapedPath()
+
+	aslash := strings.HasSuffix(apath, "/")
+	bslash := strings.HasPrefix(bpath, "/")
+
+	switch {
+	case aslash && bslash:
+		return a.Path + b.Path[1:], apath + bpath[1:]
+	case !aslash && !bslash:
+		return a.Path + "/" + b.Path, apath + "/" + bpath
+	}
+	return a.Path + b.Path, apath + bpath
 }
